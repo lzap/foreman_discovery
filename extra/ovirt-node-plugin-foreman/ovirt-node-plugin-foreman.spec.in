@@ -28,18 +28,22 @@ Group:          Applications/System
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 URL:            http://www.ovirt.org/
 Requires:       ovirt-node >= 3.0.0
-Requires:	    facter
-Requires:	    foreman-proxy
-Requires:	    sudo
+Requires:       facter
+Requires:       foreman-proxy
+Requires:       sudo
 %if "@PLUGIN_DEBUG@" == "1"
-Requires:	    openssh-server
+Requires:       openssh-server
 Requires:       vim-minimal
-Requires:	    file telnet lsof
+Requires:       file telnet lsof
 %endif
 
 BuildArch:      noarch
 
+%if 0%{?rhel} == 6
+Requires:       chkconfig initscripts
+%else
 BuildRequires:  systemd
+%endif
 
 %define app_root %{_datadir}/%{name}
 %define recipe_root %{_datadir}/ovirt-node-recipe
@@ -74,16 +78,20 @@ make install DESTDIR=%{buildroot}
 
 %post
 # Modify login issue
-sed -i 's/oVirt Node Hypervisor/Foreman Discovery/' /etc/issue
+sed -i 's/oVirt Node Hypervisor release/Foreman Discovery/' %{_sysconfdir}/issue
 
 # Reserve tty1 only for logs
-rm -f /etc/systemd/system/getty.target.wants/getty@tty1.service
+%if 0%{?rhel} == 6
+    sed -i 's/^.*ACTIVE_CONSOLES.*$/ACTIVE_CONSOLES=\/dev\/tty\[2-6\]/' %{_sysconfdir}/sysconfig/init
+%else
+    rm -f %{_sysconfdir}/systemd/system/getty.target.wants/getty@tty1.service
+%endif
 
 # In development mode set password and enable ssh daemon (with root access)
 %if "@PLUGIN_DEBUG@" == "1"
 echo "root:development" | chpasswd
-sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication yes/' %{_sysconfdir}/ssh/sshd_config
+sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin yes/' %{_sysconfdir}/ssh/sshd_config
 %endif
 
 # Configure foreman-proxy
@@ -92,38 +100,80 @@ LOGLEVEL="DEBUG"
 %else
 LOGLEVEL="ERROR"
 %endif
-sed -i 's|.*:log_file:.*|:log_file: /dev/stdout|' /etc/foreman-proxy/settings.yml
-sed -i "s/.*:log_level:.*/:log_level: $LOGLEVEL/" /etc/foreman-proxy/settings.yml
-sed -i 's/.*:bmc:.*/:bmc: true/' /etc/foreman-proxy/settings.yml
-sed -i 's/.*:bmc_default_provider:.*/:bmc_default_provider: shell/' /etc/foreman-proxy/settings.yml
+sed -i "s/.*:log_level:.*/:log_level: $LOGLEVEL/" %{_sysconfdir}/foreman-proxy/settings.yml
+sed -i 's/.*:bmc:.*/:bmc: true/' %{_sysconfdir}/foreman-proxy/settings.yml
+sed -i 's/.*:bmc_default_provider:.*/:bmc_default_provider: shell/' %{_sysconfdir}/foreman-proxy/settings.yml
 
 # Connect smart-proxy standard output to tty1
-sed '/^ExecStart/aStandardOutput=tty' -i /usr/lib/systemd/system/foreman-proxy.service
-sed '/^ExecStart/aTTYPath=/dev/tty1' -i /usr/lib/systemd/system/foreman-proxy.service
+%if 0%{?rhel} == 6
+    sed -i 's|.*:log_file:.*|:log_file: /dev/tty1|' %{_sysconfdir}/foreman-proxy/settings.yml
+%else
+    sed -i 's|.*:log_file:.*|:log_file: /dev/stdout|' %{_sysconfdir}/foreman-proxy/settings.yml
+    sed '/^ExecStart/aStandardOutput=tty' -i /usr/lib/systemd/system/foreman-proxy.service
+    sed '/^ExecStart/aTTYPath=/dev/tty1' -i /usr/lib/systemd/system/foreman-proxy.service
+%endif
 
 # Enable Foreman Proxy service
-systemctl enable foreman-proxy.service
+%if 0%{?rhel} == 6
+    chkconfig foreman-proxy on
+%else
+    systemctl enable foreman-proxy.service
+%endif
 
 # Enable Discover Host service (must be executed as the last - idle - service)
-systemctl enable discover-host.service
-
-# Force NetworkManager to wait for IP address
-systemctl enable NetworkManager-wait-online.service
-
-# Add foreman-proxy user to sudo and disable interactive tty for reboot
-sed -i -e 's/^Defaults.*requiretty/Defaults !requiretty/g' /etc/sudoers
-echo "foreman-proxy ALL=NOPASSWD: /sbin/shutdown" >> /etc/sudoers
-
-# Limit maximum use of systemd journal (it is kept in memory for stateless)
-sed -i -e 's/^.*SystemMaxUse.*$/SystemMaxUse=20M/g' /etc/systemd/journald.conf
-
-# When using ntpdate during start, do not pause when time servers not available
-[ -f /etc/sysconfig/ntpdate ] && sed -i -e 's/^.*RETRIES.*$/RETRIES=0/g' /etc/sysconfig/ntpdate
+%if 0%{?rhel} == 6
+    chkconfig --add discover-host
+    chkconfig discover-host on
+%else
+    systemctl enable discover-host.service
+%endif
 
 # Set extra directory for facter
-sed -i '/\[Service\]/a Environment="FACTERLIB=/usr/share/ovirt-node-plugin-foreman"' /usr/lib/systemd/system/foreman-proxy.service
+%if 0%{?rhel} == 6
+    echo "FACTERLIB=/usr/share/ovirt-node-plugin-foreman" >> %{_sysconfdir}/sysconfig/foreman-proxy
+%else
+    sed -i '/\[Service\]/a Environment="FACTERLIB=/usr/share/ovirt-node-plugin-foreman"' /usr/lib/systemd/system/foreman-proxy.service
+%endif
 
-%preun
+# Add foreman-proxy user to sudo and disable interactive tty for reboot
+sed -i -e 's/^Defaults.*requiretty/Defaults !requiretty/g' %{_sysconfdir}/sudoers
+echo "foreman-proxy ALL=NOPASSWD: /sbin/shutdown" >> %{_sysconfdir}/sudoers
+
+# Limit maximum use of logs (it is kept in memory for stateless)
+%if 0%{?rhel} == 6
+    sed -i -e 's/^weekly$/daily/g' %{_sysconfdir}/logrotate.conf
+    sed -i -e 's/^rotate 4$/rotate 1/g' %{_sysconfdir}/logrotate.conf
+%else
+    sed -i -e 's/^.*SystemMaxUse.*$/SystemMaxUse=20M/g' %{_sysconfdir}/systemd/journald.conf
+%endif
+
+# Setup network
+%if 0%{?rhel} == 6
+    # Not using NetworkManager - configure network manually for first six ifaces (random order)
+    sed -i -e 's/^.*NETWORKING=.*$/NETWORKING=yes/g' %{_sysconfdir}/sysconfig/network
+    for DEVICE in eth0 eth1 eth2 eth3 eth4 eth5; do
+    cat > %{_sysconfdir}/sysconfig/network-scripts/ifcfg-$DEVICE <<EONS
+DEVICE=$DEVICE
+NM_CONTROLLED=no
+ONBOOT=yes
+BOOTPROTO=dhcp
+EONS
+    done
+    chkconfig network on
+
+    # Enable smart-proxy port in firewall
+    iptables -I INPUT 1 -m state --state NEW -m tcp -p tcp --dport 8443 -j ACCEPT
+    service iptables save
+%else
+    # Systemd only - force NetworkManager to wait for IP address
+    systemctl enable NetworkManager-wait-online.service
+
+    # Enable smart-proxy port in firewall
+    # TODO: Move rule from discover-host.service in here and test in Fedora 18+ and RHEL7
+%endif
+
+# When using ntpdate during start, do not pause when time servers not available
+[ -f %{_sysconfdir}/sysconfig/ntpdate ] && sed -i -e 's/^.*RETRIES.*$/RETRIES=0/g' %{_sysconfdir}/sysconfig/ntpdate
 
 %files recipe
 %{recipe_root}
@@ -132,7 +182,11 @@ sed -i '/\[Service\]/a Environment="FACTERLIB=/usr/share/ovirt-node-plugin-forem
 %{_bindir}/discover-host.rb
 %{_bindir}/find-missing-libs
 %{_datadir}/%{name}/discovery-version-fact.rb
+%if 0%{?rhel} == 6
+%{_sysconfdir}/rc.d/init.d/discover-host
+%else
 %{_unitdir}/discover-host.service
+%endif
 %{_sysconfdir}/ovirt-plugins.d
 
 %changelog

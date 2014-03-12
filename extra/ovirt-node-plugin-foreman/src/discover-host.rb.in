@@ -188,7 +188,7 @@ if DEBUG
   println "and login as root/development."
 end
 println "Some interesting facts about this system:"
-facts = Facter.to_hash.select {|k,v| k =~ /address|hardware|manufacturer|productname|memorytotal/}
+facts = Hash[Facter.to_hash.select {|k,v| k =~ /address|hardware|manufacturer|productname|memorytotal/}]
 facts.keys.sort.each {|k| println " #{k}: #{facts[k]}"}
 println "Logs from discovery services now follows:"
 

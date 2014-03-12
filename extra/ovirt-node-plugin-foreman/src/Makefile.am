@@ -23,6 +23,10 @@ dist_bin_SCRIPTS = \
 
 if HAVE_SYSTEMD
 dist_systemdsystemunit_DATA = discover-host.service
+else
+EXTRA_DIST = discover-host
+initddir = $(sysconfdir)/rc.d/init.d
+initd_SCRIPTS = discover-host
 endif
 
 dist_pkgdata_DATA = discovery-version-fact.rb

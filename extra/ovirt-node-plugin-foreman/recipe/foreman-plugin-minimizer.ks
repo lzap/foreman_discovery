@@ -124,12 +124,23 @@ droprpm xen-libs
 droprpm xfsprogs
 droprpm zfs-fuse
 
-# various files/directories
-drop /usr/share/gems/cache
-drop /usr/share/qemu
-drop /usr/share/mime
-drop /usr/share/groff
-drop /usr/share/locale
+# various RHEL6
+droprpm redhat-logos
+droprpm ca-certificates
+droprpm ghostscript-fonts
+droprpm ghostscript
+droprpm openldap
+droprpm flac
+droprpm lzop
+droprpm snappy
+droprpm cups-libs
+
+# WARNING: Those statements breaks RHEL6 image build
+#drop /usr/share/gems/cache
+#drop /usr/share/qemu
+#drop /usr/share/mime
+#drop /usr/share/groff
+#drop /usr/share/locale
 
 # The following packages are REQUIRED
 #

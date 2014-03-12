@@ -9,6 +9,8 @@ ExecStartPre=/usr/sbin/iptables -I INPUT 1 -m state --state NEW -m tcp -p tcp --
 ExecStart=/usr/bin/discover-host.rb
 KillMode=process
 Restart=always
+X-Sysvinit-ExecStart=/usr/bin/nohup /usr/bin/discover-host.rb &
+X-Sysvinit-ExecStop=killall /usr/bin/discover-host.rb
 
 [Install]
 WantedBy=multi-user.target
